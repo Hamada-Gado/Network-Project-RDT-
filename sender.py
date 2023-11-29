@@ -1,4 +1,42 @@
-from colors import Colors
+from threading import Thread
+import time
+
+
+class Colors:
+    ENDC = "\033[0m"
+
+    OKBLUE = "\033[94m"
+    OKGREEN = "\033[92m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+
+    @staticmethod
+    def cprint(colors, *args, **kwargs):
+        print(colors, end="")
+        print(*args, end="")
+        print(Colors.ENDC, end="")
+        print(**kwargs)
+
+    @staticmethod
+    def print_sender(action, *args, **kwargs):
+        Colors.cprint(Colors.OKBLUE + Colors.BOLD, "Sender:", end=" ")
+        Colors.cprint(Colors.OKBLUE + Colors.UNDERLINE, action, end=" ")
+        print(*args, **kwargs)
+
+    @staticmethod
+    def print_reciver(action, *args, **kwargs):
+        Colors.cprint(Colors.OKGREEN + Colors.BOLD, "Reciver:", end=" ")
+        Colors.cprint(Colors.OKGREEN + Colors.UNDERLINE, action, end=" ")
+        print(*args, **kwargs)
+
+    @staticmethod
+    def print_network(action, *args, **kwargs):
+        Colors.cprint(Colors.FAIL + Colors.BOLD, "Network_layer:", end=" ")
+        Colors.cprint(Colors.FAIL + Colors.UNDERLINE, action, end=" ")
+        print(Colors.FAIL, *args, **kwargs)
 
 
 class SenderProcess:
@@ -33,6 +71,7 @@ class RDTSender:
         """
         self.sequence = "0"
         self.net_srv = net_srv
+        self.timeout = net_srv.delay * 2
 
     @staticmethod
     def get_checksum(data):
@@ -84,6 +123,11 @@ class RDTSender:
         packet = {"sequence_number": seq, "data": data, "checksum": checksum}
         return packet
 
+    def net_udt_send(self, pkt, reply):
+        reply_ = self.net_srv.udt_send(pkt)
+        for key in reply_:
+            reply[key] = reply_[key]
+
     def rdt_send(self, process_buffer):
         """Implement the RDT v2.2 for the sender
         :param process_buffer:  a list storing the message the sender process wish to send to the receiver process
@@ -100,9 +144,24 @@ class RDTSender:
                 Colors.print_sender("sending", pkt)
 
                 pkt_clone = RDTSender.clone_packet(pkt)
-                reply = self.net_srv.udt_send(pkt_clone)
 
-                Colors.print_sender("received", reply)
+                reply = {}
+                thread = Thread(target=self.net_udt_send, args=(pkt_clone, reply))
+
+                thread.start()
+                old_time = time.time()
+
+                while time.time() - old_time < self.timeout:
+                    if reply != {}:
+                        break
+
+                thread.join()
+
+                if reply == {}:  # timeout
+                    Colors.print_sender("timeout")
+                    continue
+                else:
+                    Colors.print_sender("received", reply)
 
                 if not RDTSender.is_corrupted(reply) and RDTSender.is_expected_seq(
                     reply, self.sequence

@@ -1,13 +1,57 @@
 import time
 import random
-from colors import Colors
 from receiver import RDTReceiver
+
+
+class Colors:
+    ENDC = "\033[0m"
+
+    OKBLUE = "\033[94m"
+    OKGREEN = "\033[92m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+
+    @staticmethod
+    def cprint(colors, *args, **kwargs):
+        print(colors, end="")
+        print(*args, end="")
+        print(Colors.ENDC, end="")
+        print(**kwargs)
+
+    @staticmethod
+    def print_sender(action, *args, **kwargs):
+        Colors.cprint(Colors.OKBLUE + Colors.BOLD, "Sender:", end=" ")
+        Colors.cprint(Colors.OKBLUE + Colors.UNDERLINE, action, end=" ")
+        print(*args, **kwargs)
+
+    @staticmethod
+    def print_reciver(action, *args, **kwargs):
+        Colors.cprint(Colors.OKGREEN + Colors.BOLD, "Reciver:", end=" ")
+        Colors.cprint(Colors.OKGREEN + Colors.UNDERLINE, action, end=" ")
+        print(*args, **kwargs)
+
+    @staticmethod
+    def print_network(action, *args, **kwargs):
+        Colors.cprint(Colors.FAIL + Colors.BOLD, "Network_layer:", end=" ")
+        Colors.cprint(Colors.FAIL + Colors.UNDERLINE, action, end=" ")
+        print(Colors.FAIL, *args, **kwargs)
 
 
 class NetworkLayer:
     """The network layer that deliver packets and acknowledgments between sender and receiver"""
 
-    def __init__(self, reliability=1.0, delay=1.0, pkt_corrupt=True, ack_corrupt=True):
+    def __init__(
+        self,
+        reliability=1.0,
+        delay=1.0,
+        pkt_corrupt=True,
+        ack_corrupt=True,
+        pkt_timeout=True,
+        ack_timeout=True,
+    ):
         """initialize the network layer
         :param reliability: the probability that the network layer will deliver the message correctly
         :param delay: the round trip time for sending a packet and receive a reply
@@ -20,6 +64,8 @@ class NetworkLayer:
         self.delay = delay
         self.pkt_corrupt = pkt_corrupt
         self.ack_corrupt = ack_corrupt
+        self.pkt_timeout = pkt_timeout
+        self.ack_timeout = ack_timeout
         self.recv = RDTReceiver()  # connect the network layer to the receiver
 
     def get_network_reliability(self):
@@ -77,12 +123,22 @@ class NetworkLayer:
             self.__corrupt_packet()
             Colors.print_network("Packet is corrupted:", self.packet)
 
+        # timeout
+        if self.__packet_corruption_probability() and self.pkt_timeout:
+            Colors.print_network("Packet is lost")
+            return {}
+
         time.sleep(self.delay)
 
         # bridge|connect the RDT sender and receiver
         self.reply = self.recv.rdt_rcv(self.packet)
 
         r_test = self.__packet_corruption_probability()
+
+        # timeout
+        if self.__packet_corruption_probability() and self.ack_timeout:
+            Colors.print_network("Reply is lost")
+            return {}
 
         if r_test and self.ack_corrupt:
             self.__corrupt_reply()
